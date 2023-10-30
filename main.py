@@ -38,7 +38,7 @@ def create_product(collection, product_data):
         "_id": product_data['productId'],
         "brand": product_data['brand'],
         "name": product_data['name'],
-        "price": product_data['totalPriceWithVat']
+        "price": product_data['unitPriceWithVat']
     }
     try:
         collection.insert_one(product)
@@ -90,4 +90,111 @@ def parse_notino(p_collection, o_collection):
         create_order(o_collection, data)
 
 
-parse_notino(products_collection, orders_collection)
+# parse_notino(products_collection, orders_collection)
+
+
+# Функция для поиска продуктов по бренду
+def find_products_by_brand(collection, brand: str):
+    results = collection.find({"brand": brand})
+    return list(results)
+
+
+# brand_name = "Bobbi Brown"
+# searched_products = find_products_by_brand(products_collection, brand_name)
+# print(searched_products)
+
+
+# Функция для поиска продуктов по цене
+def find_products_by_price(collection, price: float):
+    results = collection.find({"price": {"$gte": price}})
+    return list(results)
+
+
+# find_price = 150
+# searched_products = find_products_by_price(products_collection, find_price)
+# print(searched_products)
+
+
+# Функция для определения средней стоимости заказов
+def avg_order_price(collection):
+    total_price_sum = 0
+    total_orders = 0
+    for order in collection.find():
+        total_price_sum += order['total_price']
+        total_orders += 1
+    avg_price = total_price_sum / total_orders
+    return avg_price
+
+
+# average_order_price = avg_order_price(orders_collection)
+# print(f"Средняя стоимость заказов: {average_order_price:.2f}")
+
+
+def calculate_average_order_price(collection):
+    pipeline = [
+        {
+            "$group": {
+                "_id": None,
+                "average_price": {"$avg": "$total_price"}
+            }
+        }
+    ]
+
+    result = list(collection.aggregate(pipeline))
+    if result:
+        return result[0]["average_price"]
+    else:
+        return 0
+
+
+# # Рассчитайте среднюю стоимость заказов
+# average_order_price = calculate_average_order_price(orders_collection)
+# print(f"Средняя стоимость заказов: {average_order_price:.2f}")
+
+
+def total_price_without_discount(products_collection, orders_collection):
+    pipeline = [
+        {
+            "$lookup":
+                {
+                    "from": "products",  # Коллекция, с которой объединяем
+                    "localField": "items.product_id",  # Поле в коллекции заказов
+                    "foreignField": "_id",  # Поле в коллекции продуктов
+                    "as": "product"  # Новое поле, в которое будут записаны объединенные документы
+                }
+        },
+        {
+            "$unwind": "$product"
+        },
+        {
+            "$group":
+                {
+                    "_id": "$_id",
+                    "totalPrice": {
+                        "$first": "$total_price"
+                    },
+                    "totalPriceWithoutDiscount": {
+                        "$sum": "$product.price"
+                    }
+                }
+        }
+    ]
+    results = orders_collection.aggregate(pipeline)
+    return list(results)
+
+
+# price_without_discount = total_price_without_discount(products_collection, orders_collection)
+# print(price_without_discount)
+
+
+def calculate_discount(total_price, total_price_without_discount):
+    return total_price_without_discount - total_price
+
+
+# Получение результатов из запроса
+price_without_discount = total_price_without_discount(products_collection, orders_collection)
+
+# Обработка результата
+for order in price_without_discount:
+    discount = calculate_discount(order["totalPrice"], order["totalPriceWithoutDiscount"])
+    print(f"Скидка для заказа {order['_id']}: {discount:.2f}")
